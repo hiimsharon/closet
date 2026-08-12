@@ -1,0 +1,8 @@
+streamlit
+pillow
+numpy
+rembg
+supabase
+google-generativeai
+pandas
+requests

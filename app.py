@@ -153,19 +153,16 @@ def analyze_garment_creative(pil_img):
 
     return None, f"AI 連線失敗: {last_err}"
 
-# ----------------- 🎯 高清流暢去背處理 -----------------
+# ----------------- 高清流暢去背處理 -----------------
 def clean_bg_removal(pil_img, canvas_size=1000):
-    # 使用 rembg 進行高品質去背
     rgba = remove(pil_img)
     
-    # 自動偵測有效圖像範圍（自動裁切掉多餘空白）
     bbox = rgba.getbbox()
     if bbox:
         rgba = rgba.crop(bbox)
 
-    # 建立 1000x1000 正方形畫布並精緻置中
     square_canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
-    target_size = canvas_size - 120  # 留白邊距
+    target_size = canvas_size - 120
     
     w, h = rgba.size
     scale = min(target_size / w, target_size / h)
@@ -181,7 +178,6 @@ def clean_bg_removal(pil_img, canvas_size=1000):
     square_canvas.save(buf, format="PNG")
     return buf.getvalue()
 
-# 旋轉圖片
 def rotate_image_bytes(image_url, angle):
     import requests
     response = requests.get(image_url)
@@ -208,7 +204,6 @@ def rotate_image_bytes(image_url, angle):
     square_canvas.save(buf, format="PNG")
     return buf.getvalue()
 
-# ----------------- 資料庫存取 -----------------
 def fetch_clothes():
     try:
         sp = get_supabase()
@@ -277,7 +272,6 @@ with tab1:
                         orig_p = st.number_input("原價 ($)", value=int(item.get('original_price') or 0), step=100, key=f"op_{item['id']}")
                         sale_p = st.number_input("預計售價 ($)", value=int(item.get('sale_price') or 0), step=100, key=f"sp_{item['id']}")
 
-                        # 🔄 照片手動旋轉校正按鈕
                         st.markdown("**🔄 照片方向旋轉校正：**")
                         r_col1, r_col2 = st.columns(2)
                         if r_col1.button("↺ 逆時針 90°", key=f"rot_l_{item['id']}"):
@@ -308,7 +302,7 @@ with tab1:
                                 st.success("已更新！")
                                 st.rerun()
                             except Exception as ex:
-                                st.error(f"儲存失敗，請確保 Supabase 已建立欄位！錯誤: {ex}")
+                                st.error(f"儲存失敗: {ex}")
 
                         if st.button("🗑️ 刪除單品", key=f"d_{item['id']}"):
                             try:
@@ -331,7 +325,7 @@ with tab2:
         resale_items = [item for item in clothes if item.get("status", "正常") in resale_targets]
 
         if not resale_items:
-            st.info("💡 目前沒有二手拍賣或淘汰的單品。可以在「典藏與衣櫥」將單品狀態改為「預計上架」！")
+            st.info("💡 目前沒有二手拍賣或淘汰的單品。可在「典藏與衣櫥」將單品狀態改為「預計上架」！")
         else:
             th1, th2, th3, th4, th5 = st.columns([1, 2, 1, 1, 1.5])
             with th1: st.markdown("**小圖**")
@@ -388,10 +382,7 @@ with tab3:
                     raw_bytes = file.read()
                     pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
                     
-                    # 1. EXIF 校正
                     pil_img = ImageOps.exif_transpose(pil_img)
-                    
-                    # 2. AI 智慧分析與轉向判斷
                     meta, ai_err = analyze_garment_creative(pil_img)
                     if ai_err:
                         st.error(f"⚠️ {ai_err}")
@@ -404,21 +395,17 @@ with tab3:
                             "style": "休閒"
                         }
 
-                    # 3. 旋轉轉正圖片
                     rot_angle = int(meta.get("rotate_angle", 0))
                     if rot_angle in [90, 180, 270]:
                         pil_img = pil_img.rotate(-rot_angle, expand=True)
 
-                    # 4. 🎯 高清去背
                     final_bytes = clean_bg_removal(pil_img)
 
-                    # 5. 上傳至 Supabase Storage
                     import time
                     fname = f"item_{int(time.time())}_{index}.png"
                     sp.storage.from_("clothes").upload(path=fname, file=final_bytes, file_options={"x-upsert": "true", "content-type": "image/png"})
                     public_url = sp.storage.from_("clothes").get_public_url(fname)
 
-                    # 6. 寫入資料庫
                     item_name = meta.get("name", "搞怪單品")[:13]
                     sp.table("clothes").insert({
                         "name": item_name,
@@ -432,7 +419,6 @@ with tab3:
                         "sale_price": 0
                     }).execute()
 
-                    # 7. 🎉 展示結果
                     st.success(f"🎉【歸檔成功】")
                     res_col1, res_col2 = st.columns([1, 2])
                     with res_col1:
@@ -447,7 +433,7 @@ with tab3:
                 except Exception as e:
                     st.error("❌ 處理失敗：" + str(e))
 
-# ==================== Tab 4: AI 時尚問答 ====================
+# ==================== Tab 4: AI 時尚問答 (優化推理展示) ====================
 with tab4:
     st.subheader("💬 AI 穿搭顧問")
     if "messages" not in st.session_state:
@@ -455,7 +441,12 @@ with tab4:
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            if isinstance(msg["content"], dict):
+                with st.expander("🧠 查看 AI 穿搭推論過程"):
+                    st.markdown(msg["content"].get("thought", ""))
+                st.markdown(msg["content"].get("answer", ""))
+            else:
+                st.markdown(msg["content"])
 
     if q := st.chat_input("想問什麼穿搭問題？（如：高雄晚上去咖啡廳怎麼搭？）"):
         st.session_state.messages.append({"role": "user", "content": q})
@@ -466,13 +457,27 @@ with tab4:
             items, _ = fetch_clothes()
             valid_items = [i for i in items if i.get("status") != "拜拜"]
             context = json.dumps(valid_items, ensure_ascii=False)
-            prompt = f'''使用者目前的衣櫥單品數據：{context}
-使用者提問：{q}
+            
+            prompt = f'''你是一位專業且帶有親和力的台灣時尚造型師。請根據使用者的衣櫥資料與提問進行分析。
 
-【重點要求】：
-1. 請作為一位專業、貼心且帶點幽默感的時尚造型師給予穿搭建議。
-2. ⚠️ 必須「全程使用台灣繁體中文」回答！絕對不能出現英文！
-3. 請直接推薦衣櫥裡的單品名稱（如：單品名稱）並說明搭配理由。'''
+【使用者衣櫥單品數據】：
+{context}
+
+【使用者提問】：
+{q}
+
+⚠️【嚴格語言限制】：
+你所有的思考過程、邏輯推演與最終回答，【必須 100% 使用繁體中文（台灣）】，絕對不能出現任何英文單字或英文邏輯提詞！
+
+請務必嚴格遵循以下格式輸出（包含分隔符號）：
+
+===THOUGHT_START===
+(在此處寫下你的繁體中文思考過程：分析場合、氣候、風格、篩選衣櫥單品的邏輯)
+===THOUGHT_END===
+
+===ANSWER_START===
+(在此處寫下你給使用者的最終親切穿搭建議，直接提及推薦的單品名稱)
+===ANSWER_END==='''
             
             available_models = get_available_gemini_models()
             reply = "⚠️ AI 服務暫時無法連線，請稍後再試。"
@@ -487,5 +492,23 @@ with tab4:
                 except Exception:
                     continue
 
-            st.markdown(reply)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
+            # 解析思考過程與最終答案
+            thought_text = ""
+            answer_text = reply
+
+            if "===THOUGHT_START===" in reply and "===THOUGHT_END===" in reply:
+                thought_text = reply.split("===THOUGHT_START===")[1].split("===THOUGHT_END===")[0].strip()
+            
+            if "===ANSWER_START===" in reply and "===ANSWER_END===" in reply:
+                answer_text = reply.split("===ANSWER_START===")[1].split("===ANSWER_END===")[0].strip()
+
+            if thought_text:
+                with st.expander("🧠 查看 AI 穿搭推論過程", expanded=True):
+                    st.markdown(thought_text)
+            
+            st.markdown(answer_text)
+            
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": {"thought": thought_text, "answer": answer_text}
+            })
